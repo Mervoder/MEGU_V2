@@ -348,71 +348,71 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	switch(MEGU){
-case RAMPA:
-		MEGU_mod=1;
-	  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
+			switch(MEGU){
+		case RAMPA:
+				MEGU_mod=1;
+			  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
 
-		if(Lsm_Sensor.Accel_X > 1 && altitude >0 )
-		  {
-			rampa_control=1;
-			MEGU=UCUS_BASLADI;
-			Buzzer(6, 300);
-		  }
-
-
+				if(Lsm_Sensor.Accel_X > 1 && altitude >0 )
+				  {
+					rampa_control=1;
+					MEGU=UCUS_BASLADI;
+					Buzzer(6, 300);
+				  }
 
 
-	  break;
-
-case UCUS_BASLADI:
-		MEGU_mod=2;
-		// FLASH MEMORYE KAYDETMEYE BASLA
-		flash_flag =1;
-
-		MEGU=KADEME_AYRILDIMI;
-
-	 break;
-
-case KADEME_AYRILDIMI:
-		MEGU_mod=3;
-
-if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13))
-	{
 
 
-		MEGU=AYRILDI;
+			  break;
 
+		case UCUS_BASLADI:
+				MEGU_mod=2;
+				// FLASH MEMORYE KAYDETMEYE BASLA
+				flash_flag =1;
 
-	}
+				MEGU=KADEME_AYRILDIMI;
 
-	 break;
+			 break;
 
-case AYRILDI:
-		MEGU_mod=4;
-		 if ((compare_arrays(EGU_RX_BUFFER, EGU_motor_atesleme, EGU_RX_BUFFER_SIZE)))
-		{
+		case KADEME_AYRILDIMI:
+				MEGU_mod=3;
 
-			if(Lsm_Sensor.Pitch >= 25 ) // pozisyon kontrolü
+		if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13))
 			{
-				motor_ates=1;
-				for(uint8_t i=0;i<5;i++)
-				{
-				EGU_RX_BUFFER[i++]=0;
-				}
+
+
+				MEGU=AYRILDI;
+
 
 			}
 
+			 break;
+
+		case AYRILDI:
+				MEGU_mod=4;
+				 if ((compare_arrays(EGU_RX_BUFFER, EGU_motor_atesleme, EGU_RX_BUFFER_SIZE)))
+				{
+
+					if(Lsm_Sensor.Pitch >= 25 ) // pozisyon kontrolü
+					{
+						motor_ates=1;
+						for(uint8_t i=0;i<5;i++)
+						{
+						EGU_RX_BUFFER[i++]=0;
+						}
+
+					}
+
+				}
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, SET);
+				HAL_Delay(1000);
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, RESET);
+
+
+			 break;
+
+
 		}
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, SET);
-		HAL_Delay(1000);
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, RESET);
-
-
-	 break;
-
-
-}
 
 	/************************************************************************************/
 			  if(altitude >30 && MEGU <3)
