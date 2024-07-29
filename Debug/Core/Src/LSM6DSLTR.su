@@ -1,0 +1,6 @@
+../Core/Src/LSM6DSLTR.c:18:6:LSM6DSLTR_Init	32	static
+../Core/Src/LSM6DSLTR.c:43:6:LSM6DSLTR_Read_Accel_Data	40	static
+../Core/Src/LSM6DSLTR.c:81:6:LSM6DSLTR_Read_Gyro_Data	40	static
+../Core/Src/LSM6DSLTR.c:117:5:IS_MPU_READY	8	static
+../Core/Src/LSM6DSLTR.c:124:6:calculate_roll_pitch	24	static
+../Core/Src/LSM6DSLTR.c:128:6:update_angles	24	static
