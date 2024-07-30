@@ -1,6 +1,7 @@
 "./Core/Src/BME280/bme280.o"
 "./Core/Src/FIR_FILTER.o"
 "./Core/Src/LSM6DSLTR.o"
+"./Core/Src/kalman.o"
 "./Core/Src/main.o"
 "./Core/Src/stm32f4xx_hal_msp.o"
 "./Core/Src/stm32f4xx_it.o"

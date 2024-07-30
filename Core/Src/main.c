@@ -28,6 +28,7 @@
 #include <math.h>
 #include "FIR_FILTER.h"
 #include "stdio.h"
+#include "kalman.h"
 #include "string.h"
 /* USER CODE END Includes */
 
@@ -53,8 +54,6 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
-SPI_HandleTypeDef hspi1;
-
 TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim10;
 
@@ -79,22 +78,16 @@ static uint8_t EGU_motor_atesleme[5]={0x54,0x52,0x32,0x0D,0x0A};
 
 
 
-uint32_t page =0;
-uint8_t offset =0;
-uint8_t flash_flag =1;
-uint8_t flash_timer =0;
+uint8_t manyetik_switch=1;
 
 
-float zaman=0 , zaman2=0;
 
 uint8_t MEGU_battery=0;
 uint8_t MEGU_mod=0;
 
 uint8_t BUTTON_STATE=0;
 
-
-uint8_t writeData[50] = {0,1,1,1};
-uint8_t readData[50] = {0};
+float zaman=0;
 
 
 uint8_t fitil_kontrol=0;
@@ -104,6 +97,8 @@ uint8_t rampa_control=0;
 uint8_t ariza_BME=0;
 uint8_t ariza_LSM=0;
 uint8_t ariza=0;
+uint32_t set_timer=0;
+uint32_t set1=0;
 
 const uint8_t egu_byte_0=0x54;
 const uint8_t egu_byte_1=0x52;
@@ -125,7 +120,10 @@ float speed=0;
 
 uint8_t altitude_rampa_control=0;
 float speed_max , x_max , altitude_max =0;
-
+float real_pitch , real_roll , toplam_pitch , toplam_roll;
+uint8_t sensor_counter = 0;
+KalmanFilter kf;
+float altitude_kalman=0;
 
 enum ZORLU2024
 {
@@ -138,7 +136,6 @@ enum ZORLU2024 MEGU;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_SPI1_Init(void);
 static void MX_USART6_UART_Init(void);
 static void MX_TIM10_Init(void);
 static void MX_TIM6_Init(void);
@@ -154,7 +151,6 @@ void union_converter(void);
 void EGU_Buff_Load(void);
 void Buzzer(int how_many , uint32_t how_long);
 void Altitude_Offset();
-void Flash_toplu_temizleme(int page);
 int compare_arrays(uint8_t *array1, uint8_t *array2, uint16_t size);
 void MEGU_TX_BUF_FILL(void);
 /* USER CODE END PFP */
@@ -201,6 +197,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 	if(htim==&htim10){ //50ms
 	sensor_flag=1;
+	set_timer++;
 	}
 
 
@@ -237,7 +234,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
-  MX_SPI1_Init();
   MX_USART6_UART_Init();
   MX_FATFS_Init();
   MX_TIM10_Init();
@@ -259,6 +255,8 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim10);
   HAL_TIM_Base_Start_IT(&htim6);
 
+  KalmanFilter_Init(&kf, 0.005, 0.1, 0.0);
+
   MAFilter_Init(&accx);
   FIRFilter_Init(&IMU_GYROY);
   FIRFilter_Init(&IMU_GYROX);
@@ -276,6 +274,7 @@ int main(void)
   ariza_LSM=LSM_I2C_Testsensor();
 
   ariza=ariza_BME+ariza_LSM;
+	set1=set_timer;
 
 
   /* USER CODE END 2 */
@@ -293,7 +292,7 @@ int main(void)
 	if(sensor_flag==1)
 	{
 		 sensor_flag=0;
-		 prev_alt=altitude;
+		 prev_alt=altitude_kalman;
 		 rslt = bme280_set_sensor_mode(BME280_FORCED_MODE, &dev);
 		/* �?��?�터 취�? */
 		rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, &dev);
@@ -304,7 +303,9 @@ int main(void)
 		  humidity = comp_data.humidity;
 		  pressure = comp_data.pressure;
 		  altitude=BME280_Get_Altitude()-offset_altitude;
-		  speed=(altitude-prev_alt)*20;
+		  altitude_kalman= KalmanFilter_Update(&kf, altitude);
+		  speed=(altitude_kalman-prev_alt)*20;
+
     	}
 
 		 LSM6DSLTR_Read_Accel_Data(&Lsm_Sensor);
@@ -317,9 +318,24 @@ int main(void)
 		 Lsm_Sensor.Gyro_Y=FIRFilter_Update(&IMU_GYROY, Lsm_Sensor.Gyro_Y);
 		 Lsm_Sensor.Gyro_Z=FIRFilter_Update(&IMU_GYROZ, Lsm_Sensor.Gyro_Z);
 
-		  fitil_kontrol=  HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12);
+		 toplam_pitch+= Lsm_Sensor.Pitch;
+		 toplam_roll+= Lsm_Sensor.Roll;
 
+		 sensor_counter++;
+		 if(sensor_counter == 10)
+		 {
+			 real_pitch = toplam_pitch/10;
+			 real_roll = toplam_roll/10;
+			 toplam_roll=0;
+			 toplam_pitch=0;
+			 sensor_counter=0;
+		 }
+
+
+		 fitil_kontrol= HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12);
+		 manyetik_switch= HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
 		 BUTTON_STATE=HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9);
+
 
 
 	}
@@ -329,7 +345,7 @@ int main(void)
 
 
 /************ MEGÜ durum sorgusu **************************************************/
-// EGU_durum_sorgusu[5]={0x54,0x52,0x35,0x0D,0x0A};
+
 	if( (compare_arrays(EGU_RX_BUFFER, EGU_durum_sorgusu, EGU_RX_BUFFER_SIZE)) )
 	{
 		HAL_UART_Transmit(&huart6, EGU_TX_BUFFER, EGU_TX_BUFFER_SIZE, 1000);
@@ -338,6 +354,16 @@ int main(void)
 		{
 		EGU_RX_BUFFER[i++]=0;
 		}
+	}
+	else if ((compare_arrays(EGU_RX_BUFFER, EGU_motor_atesleme, EGU_RX_BUFFER_SIZE)))
+	{
+
+		motor_ates=1;
+			for(uint8_t i=0;i<5;i++)
+			{
+			EGU_RX_BUFFER[i++]=0;
+			}
+
 	}
 
 
@@ -353,8 +379,10 @@ int main(void)
 				MEGU_mod=1;
 			  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
 
-				if(Lsm_Sensor.Accel_X > 1 && altitude >0 )
+				if(Lsm_Sensor.Accel_X > 15 && altitude >0 )
 				  {
+
+
 					rampa_control=1;
 					MEGU=UCUS_BASLADI;
 					Buzzer(6, 300);
@@ -364,20 +392,18 @@ int main(void)
 
 
 			  break;
-
 		case UCUS_BASLADI:
 				MEGU_mod=2;
-				// FLASH MEMORYE KAYDETMEYE BASLA
-				flash_flag =1;
+				if(altitude>350){
 
 				MEGU=KADEME_AYRILDIMI;
-
+				}
 			 break;
 
 		case KADEME_AYRILDIMI:
 				MEGU_mod=3;
 
-		if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13))
+		if(manyetik_switch==0)
 			{
 
 
@@ -390,23 +416,18 @@ int main(void)
 
 		case AYRILDI:
 				MEGU_mod=4;
-				 if ((compare_arrays(EGU_RX_BUFFER, EGU_motor_atesleme, EGU_RX_BUFFER_SIZE)))
+				if(real_pitch >= 25 && motor_ates==1 ) // pozisyon kontrolü
 				{
 
-					if(Lsm_Sensor.Pitch >= 25 ) // pozisyon kontrolü
-					{
-						motor_ates=1;
-						for(uint8_t i=0;i<5;i++)
-						{
-						EGU_RX_BUFFER[i++]=0;
-						}
-
+					if(set1-set_timer==10){
+					HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
+					HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_4);
+					Buzzer(10, 100);
+					set1=set_timer;
 					}
-
 				}
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, SET);
-				HAL_Delay(1000);
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, RESET);
+
+
 
 
 			 break;
@@ -508,44 +529,6 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
-
-}
-
-/**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -669,23 +652,36 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, CS_Pin|BUZZER_Pin|GATE_D_Pin|GATE_C_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LED2_Pin|LED1_Pin|GATE_B_Pin|GATE_A_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PC13 BUTTON_Pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_13|BUTTON_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : CS_Pin BUZZER_Pin GATE_D_Pin GATE_C_Pin */
-  GPIO_InitStruct.Pin = CS_Pin|BUZZER_Pin|GATE_D_Pin|GATE_C_Pin;
+  /*Configure GPIO pins : PC13 CS_Pin BUZZER_Pin GATE_D_Pin
+                           GATE_C_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|CS_Pin|BUZZER_Pin|GATE_D_Pin
+                          |GATE_C_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;
@@ -699,6 +695,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : BUTTON_Pin */
+  GPIO_InitStruct.Pin = BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(BUTTON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB8 INT2_Pin */
   GPIO_InitStruct.Pin = GPIO_PIN_8|INT2_Pin;
@@ -864,7 +866,7 @@ void MEGU_TX_BUF_FILL(void)
 				EGU_TX_BUFFER[i+18]=f2u8_x.array[i];
 		 }
 	  float2unit8 f2u8_pitch;
-	  f2u8_pitch.fVal=Lsm_Sensor.Pitch;
+	  f2u8_pitch.fVal=real_pitch;
 	  	 	 for(uint8_t i=0;i<4;i++)
 		 {
 	 			EGU_TX_BUFFER[i+22]=f2u8_pitch.array[i];
@@ -875,7 +877,7 @@ void MEGU_TX_BUF_FILL(void)
 
 	  EGU_TX_BUFFER[26]=rampa_control;//uçuş başladı mı
 	  EGU_TX_BUFFER[27]=motor_ates;//motor ateşleme sinyali geldi mi
-	  EGU_TX_BUFFER[28]=egu_byte_28;
+	  EGU_TX_BUFFER[28]=manyetik_switch;
 	  EGU_TX_BUFFER[29]=ariza;//ariza tespit
 	  EGU_TX_BUFFER[30]=fitil_kontrol;
 	  EGU_TX_BUFFER[31]=egu_byte_31;
