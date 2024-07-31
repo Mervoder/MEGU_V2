@@ -80,6 +80,10 @@ static uint8_t EGU_motor_atesleme[5]={0x54,0x52,0x32,0x0D,0x0A};
 
 uint8_t manyetik_switch=1;
 
+int buzzer_long=0 , buzzer_short=0, buzzer_ariza=0 ;
+int buzzer_short_counter , buzzer_long_counter , buzzer_ariza_counter;
+
+
 
 
 uint8_t MEGU_battery=0;
@@ -198,6 +202,31 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim==&htim10){ //50ms
 	sensor_flag=1;
 	set_timer++;
+
+	if(buzzer_long ==1 && buzzer_long_counter>=20)
+	{
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
+		buzzer_long_counter = 0;
+	}
+	buzzer_long_counter++;
+
+	if(buzzer_short ==1 && buzzer_short_counter>=9)
+	{
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
+		buzzer_short_counter = 0;
+	}
+	buzzer_short_counter++;
+
+	if(buzzer_ariza ==1 && buzzer_ariza_counter>=3)
+	{
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
+		buzzer_ariza_counter = 0;
+	}
+	buzzer_ariza_counter++;
+
+
+
+
 	}
 
 
@@ -333,7 +362,20 @@ int main(void)
 
 
 		 fitil_kontrol= HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12);
+//		 if(fitil_kontrol == 0) { buzzer_long=0; buzzer_short =1;}
+//		 else {
+//			 buzzer_short=0;
+//			 buzzer_long =1;
+//		 }
+
 		 manyetik_switch= HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+
+		 if(manyetik_switch == 0) { buzzer_long=0; buzzer_short =1;}
+		 else {
+			 buzzer_short=0;
+			 buzzer_long =1;
+		 }
+
 		 BUTTON_STATE=HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9);
 
 
