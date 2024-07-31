@@ -483,7 +483,7 @@ int main(void)
 				  altitude_rampa_control =1;
 			  }
 	/*************************************************************************************/
-			  if(altitude>altitude_max) altitude_max = altitude;
+			  if(altitude>altitude_max) altitude_max = altitude_kalman;
 
 			  if(speed>speed_max) speed_max = speed;
 
