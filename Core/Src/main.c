@@ -347,7 +347,7 @@ int main(void)
 		 Lsm_Sensor.Gyro_Y=FIRFilter_Update(&IMU_GYROY, Lsm_Sensor.Gyro_Y);
 		 Lsm_Sensor.Gyro_Z=FIRFilter_Update(&IMU_GYROZ, Lsm_Sensor.Gyro_Z);
 
-		 toplam_pitch+= Lsm_Sensor.Pitch;
+		 toplam_pitch+= (-Lsm_Sensor.Pitch);
 		 toplam_roll+= Lsm_Sensor.Roll;
 
 		 sensor_counter++;
@@ -371,16 +371,10 @@ int main(void)
 		 manyetik_switch= HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
 
 		 if(manyetik_switch == 0) { buzzer_long=0; buzzer_short =1;}
-		 else {
-			 buzzer_short=0;
-			 buzzer_long =1;
-		 }
 
 		 BUTTON_STATE=HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9);
 
-
-
-	}
+	  }
 
 
 
@@ -409,9 +403,6 @@ int main(void)
 	}
 
 
-
-
-
 /***********************************END*************************************************/
     /* USER CODE END WHILE */
 
@@ -421,19 +412,15 @@ int main(void)
 				MEGU_mod=1;
 			  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
 
-				if(Lsm_Sensor.Accel_X > 15 && altitude >0 )
+				if(Lsm_Sensor.Accel_X > -15 && altitude_rampa_control ==1 )
 				  {
-
 
 					rampa_control=1;
 					MEGU=UCUS_BASLADI;
-					Buzzer(6, 300);
 				  }
 
-
-
-
 			  break;
+
 		case UCUS_BASLADI:
 				MEGU_mod=2;
 				if(altitude>350){
@@ -447,11 +434,7 @@ int main(void)
 
 		if(manyetik_switch==0)
 			{
-
-
 				MEGU=AYRILDI;
-
-
 			}
 
 			 break;
@@ -461,33 +444,30 @@ int main(void)
 				if(real_pitch >= 25 && motor_ates==1 ) // pozisyon kontrolü
 				{
 
-					if(set1-set_timer==10){
+					if(set1-set_timer==10)
+					{
 					HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
 					HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_4);
-					Buzzer(10, 100);
+
 					set1=set_timer;
 					}
 				}
 
-
-
-
 			 break;
-
 
 		}
 
-	/************************************************************************************/
-			  if(altitude >30 && MEGU <3)
-			  {
-				  altitude_rampa_control =1;
-			  }
-	/*************************************************************************************/
-			  if(altitude>altitude_max) altitude_max = altitude_kalman;
+/************************************************************************************/
+		  if(altitude >30 && MEGU <3)
+		  {
+			  altitude_rampa_control =1;
+		  }
+/*************************************************************************************/
+		  if(altitude>altitude_max) altitude_max = altitude_kalman;
 
-			  if(speed>speed_max) speed_max = speed;
+		  if(speed>speed_max) speed_max = speed;
 
-			  if( Lsm_Sensor.Accel_X> x_max) x_max =  Lsm_Sensor.Accel_X;
+		  if( Lsm_Sensor.Accel_X> x_max) x_max =  Lsm_Sensor.Accel_X;
 
 
   }
