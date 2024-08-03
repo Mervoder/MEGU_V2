@@ -136,7 +136,7 @@ void update_angles(LSM6DSLTR *Lsm_Sensor) {
     Lsm_Sensor->Pitch = ALPHA * (Lsm_Sensor->Pitch + Lsm_Sensor->Gyro_Y * dt) + (1 - ALPHA) * Lsm_Sensor->Pitch;
 
     // Yaw açısını jiroskop verileriyle güncelle (basit zamanla entegrasyon)
-    Lsm_Sensor->Yaw += Lsm_Sensor->Gyro_Z * dt;
+ //   Lsm_Sensor->Yaw += Lsm_Sensor->Gyro_Z * dt;
 
     // Önceki zamanı güncelle
     prev_time = current_time;

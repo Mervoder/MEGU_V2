@@ -328,7 +328,7 @@ int main(void)
 
 		if(rslt == BME280_OK)
 		{
-		  temperature = comp_data.temperature;
+		  temperature = comp_data.temperature/100.00;
 		  humidity = comp_data.humidity;
 		  pressure = comp_data.pressure;
 		  altitude=BME280_Get_Altitude()-offset_altitude;
@@ -370,7 +370,7 @@ int main(void)
 
 		 manyetik_switch= HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
 
-		 if(manyetik_switch == 0) { buzzer_long=0; buzzer_short =1;}
+		// if(manyetik_switch == 1) { buzzer_long=0; buzzer_short =1;}
 
 		 BUTTON_STATE=HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9);
 
@@ -412,7 +412,7 @@ int main(void)
 				MEGU_mod=1;
 			  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
 
-				if(Lsm_Sensor.Accel_X > -15 && altitude_rampa_control ==1 )
+				if(-Lsm_Sensor.Accel_X > 10 && altitude_rampa_control ==1 )
 				  {
 
 					rampa_control=1;
@@ -423,7 +423,7 @@ int main(void)
 
 		case UCUS_BASLADI:
 				MEGU_mod=2;
-				if(altitude>350){
+				if(altitude_kalman>350){
 
 				MEGU=KADEME_AYRILDIMI;
 				}
@@ -432,7 +432,7 @@ int main(void)
 		case KADEME_AYRILDIMI:
 				MEGU_mod=3;
 
-		if(manyetik_switch==0)
+		if(manyetik_switch==1)
 			{
 				MEGU=AYRILDI;
 			}
@@ -467,7 +467,7 @@ int main(void)
 
 		  if(speed>speed_max) speed_max = speed;
 
-		  if( Lsm_Sensor.Accel_X> x_max) x_max =  Lsm_Sensor.Accel_X;
+		  if( -Lsm_Sensor.Accel_X> x_max) x_max =  -Lsm_Sensor.Accel_X;
 
 
   }
@@ -870,7 +870,7 @@ void MEGU_TX_BUF_FILL(void)
         		EGU_TX_BUFFER[i+6]=f2u8_battery.array[i];
    	 	 }
 	 float2unit8 f2u8_alt;
-	 f2u8_alt.fVal=altitude;
+	 f2u8_alt.fVal=altitude_kalman;
 			 for(uint8_t i=0;i<4;i++)
 		 {
 				EGU_TX_BUFFER[i+10]=f2u8_alt.array[i];
