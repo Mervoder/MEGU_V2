@@ -441,7 +441,7 @@ int main(void)
 
 		case AYRILDI:
 				MEGU_mod=4;
-				if(real_pitch >= 25 && motor_ates==1 ) // pozisyon kontrolü
+				if( motor_ates==1 ) // pozisyon kontrolü
 				{
 
 					if(set1-set_timer==10)
