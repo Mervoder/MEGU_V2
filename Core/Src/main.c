@@ -43,7 +43,9 @@
 #define EGU_RX_BUFFER_SIZE 5
 #define EGU_TX_BUFFER_SIZE 34
 
-
+#define HP_alpha 	0.92f // 0.8 en iyi
+#define LP_alpha 	0.55f // 0.4 en iyi
+#define beta		0.85
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,6 +69,8 @@ typedef union{
 }float2unit8;
 
 
+
+KalmanFilter kf , na , pa , ax,ay,az,gx,gy,gz;
 
 
 uint8_t EGU_RX_BUFFER[EGU_RX_BUFFER_SIZE];
@@ -122,11 +126,30 @@ float P0 = 1013.25;
 float prev_alt=0;
 float speed=0;
 
+float prev_time1;
 uint8_t altitude_rampa_control=0;
 float speed_max , x_max , altitude_max =0;
-float real_pitch , real_roll , toplam_pitch , toplam_roll;
+
+float real_pitch, real_roll , toplam_pitch,toplam_roll , toplam_accX , toplam_accY , toplam_accZ, toplam_gX,toplam_gY,toplam_gZ ,
+	  toplam_normal,real_normal;
+
+float offset_x,offset_y,offset_z, gyroX_prev, gyroY_prev,gyroZ_prev,
+	  accX_prev, accY_prev,accZ_prev;
+float filtered_gyroX ,filtered_gyroY,filtered_gyroZ, filtered_accX,
+	  filtered_accY,filtered_accZ;
+float filtered_gyro[3] , filtered_gyro_HP[3];
+float filtered_acc_LP[3] , filtered_acc[3];
+float gravity_normal_angle;
+
+float gyroX_HP_prev = 0.0f, gyroY_HP_prev = 0.0f, gyroZ_HP_prev = 0.0f;
+float filtered_gyro_HP_X = 0.0f, filtered_gyro_HP_Y = 0.0f, filtered_gyro_HP_Z = 0.0f;
+
+float gyroX_LP_prev = 0.0f, gyroY_LP_prev = 0.0f, gyroZ_LP_prev = 0.0f , filtered_gyro_LP[3];
+
+int kontrol_counter=0;
 uint8_t sensor_counter = 0;
 KalmanFilter kf;
+LSM6DSLTR Lsm_Sensor;
 float altitude_kalman=0;
 
 enum ZORLU2024
@@ -162,14 +185,7 @@ void MEGU_TX_BUF_FILL(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-LSM6DSLTR Lsm_Sensor;
 
-FIRFilter accy;
-FIRFilter accz;
-FIRFilter accx;
-FIRFilter IMU_GYROX;
-FIRFilter IMU_GYROY;
-FIRFilter IMU_GYROZ;
 
 struct bme280_dev dev;
 struct bme280_data comp_data;
@@ -286,16 +302,31 @@ int main(void)
 
   KalmanFilter_Init(&kf, 0.005, 0.1, 0.0);
 
-  MAFilter_Init(&accx);
-  FIRFilter_Init(&IMU_GYROY);
-  FIRFilter_Init(&IMU_GYROX);
-  FIRFilter_Init(&IMU_GYROZ);
-
-
+  KalmanFilter_Init(&ax, 0.2, 2, toplam_accX);
+  KalmanFilter_Init(&ay, 0.2, 2, toplam_accY);
+  KalmanFilter_Init(&az, 0.2, 2, toplam_accZ);
+  KalmanFilter_Init(&gx, 0.2, 2, toplam_gX);
+  KalmanFilter_Init(&gy, 0.2, 2, toplam_gY);
+  KalmanFilter_Init(&gz, 0.2, 2, toplam_gZ);
 
   LSM6DSLTR_Init();
   bme_config();
   Altitude_Offset();
+
+  for(int i = 0; i<5;i++)
+  {
+
+	      LSM6DSLTR_Read_Gyro_Data(&Lsm_Sensor);
+
+	      offset_x += Lsm_Sensor.Gyro_X;
+		  offset_y += Lsm_Sensor.Gyro_Y;
+		  offset_z += Lsm_Sensor.Gyro_Z;
+		  HAL_Delay(10);
+  }
+  offset_x=offset_x/5;
+  offset_y=offset_y/5;
+  offset_z=offset_z/5;
+
 
   Buzzer(10, 100);
 
@@ -326,39 +357,85 @@ int main(void)
 		/* �?��?�터 취�? */
 		rslt = bme280_get_sensor_data(BME280_ALL, &comp_data, &dev);
 
-		if(rslt == BME280_OK)
-		{
-		  temperature = comp_data.temperature/100.00;
-		  humidity = comp_data.humidity;
-		  pressure = comp_data.pressure;
-		  altitude=BME280_Get_Altitude()-offset_altitude;
-		  altitude_kalman= KalmanFilter_Update(&kf, altitude);
-		  speed=(altitude_kalman-prev_alt)*20;
 
-    	}
 
-		 LSM6DSLTR_Read_Accel_Data(&Lsm_Sensor);
-		 calculate_roll_pitch(&Lsm_Sensor);
-		 LSM6DSLTR_Read_Gyro_Data(&Lsm_Sensor);
-		 update_angles(&Lsm_Sensor);
+	      LSM6DSLTR_Read_Accel_Data(&Lsm_Sensor);
+	      LSM6DSLTR_Read_Gyro_Data(&Lsm_Sensor);
 
-		 Lsm_Sensor.Accel_X=FIRFilter_Update(&accx,  Lsm_Sensor.Accel_X);
-		 Lsm_Sensor.Gyro_X=FIRFilter_Update(&IMU_GYROX,  Lsm_Sensor.Gyro_X);
-		 Lsm_Sensor.Gyro_Y=FIRFilter_Update(&IMU_GYROY, Lsm_Sensor.Gyro_Y);
-		 Lsm_Sensor.Gyro_Z=FIRFilter_Update(&IMU_GYROZ, Lsm_Sensor.Gyro_Z);
 
-		 toplam_pitch+= (-Lsm_Sensor.Pitch);
-		 toplam_roll+= Lsm_Sensor.Roll;
+	      toplam_accX += KalmanFilter_Update(&ax,Lsm_Sensor.Accel_X);
+	      toplam_accY += KalmanFilter_Update(&ay,Lsm_Sensor.Accel_Y );
+	      toplam_accZ += KalmanFilter_Update(&az,Lsm_Sensor.Accel_Z );
+	      toplam_gX +=  KalmanFilter_Update(&gx,Lsm_Sensor.Gyro_X-offset_x  );
+	      toplam_gX +=  KalmanFilter_Update(&gy,Lsm_Sensor.Gyro_Y -offset_y );
+	      toplam_gZ +=  KalmanFilter_Update(&gz,Lsm_Sensor.Gyro_Z -offset_z );
 
-		 sensor_counter++;
-		 if(sensor_counter == 10)
-		 {
-			 real_pitch = toplam_pitch/10;
-			 real_roll = toplam_roll/10;
-			 toplam_roll=0;
-			 toplam_pitch=0;
-			 sensor_counter=0;
-		 }
+		   sensor_counter++;
+	     if(sensor_counter == 10)
+		      {
+
+			      if(rslt == BME280_OK )
+			      {
+			          temperature = comp_data.temperature / 100.00;
+			          humidity = comp_data.humidity;
+			          pressure = comp_data.pressure;
+			          altitude = BME280_Get_Altitude() - offset_altitude;
+			          altitude_kalman = KalmanFilter_Update(&kf, altitude);
+			          speed = (altitude - prev_alt) * 3.33;
+			      }
+
+
+					  // High pass filter for gyroscope data
+	//			  filtered_gyro_HP_X = HP_alpha * (gyroX_HP_prev + toplam_gX/10.0f - gyroX_HP_prev);
+	//			  filtered_gyro_HP_Y = HP_alpha * (gyroY_HP_prev + toplam_gY/10.0f - gyroY_HP_prev);
+	//			  filtered_gyro_HP_Z = HP_alpha * (gyroZ_HP_prev + toplam_gZ/10.0f - gyroZ_HP_prev);
+
+				  filtered_gyro_LP[0] = LP_alpha * toplam_gX/10.0f + (1.0 - LP_alpha) * gyroX_LP_prev;
+				  filtered_gyro_LP[1] = LP_alpha * toplam_gY/10.0f + (1.0 - LP_alpha) * gyroY_LP_prev ;
+				  filtered_gyro_LP[2] = LP_alpha * toplam_gZ/10.0f + (1.0 - LP_alpha) * gyroZ_LP_prev;
+
+				/*************************** ********************************/
+				  filtered_gyro_HP_X = beta * (gyroX_HP_prev +  filtered_gyro_LP[0] - gyroX_LP_prev);
+				  filtered_gyro_HP_Y = beta * (gyroY_HP_prev + filtered_gyro_LP[1] - gyroY_LP_prev);
+				  filtered_gyro_HP_Z = beta * (gyroZ_HP_prev +  filtered_gyro_LP[2] - gyroZ_LP_prev);
+
+
+				  gyroX_LP_prev =  filtered_gyro_LP[0];
+				  gyroY_LP_prev =  filtered_gyro_LP[1];
+				  gyroZ_LP_prev =  filtered_gyro_LP[2];
+
+				  // Low pass filter for accelerometer data
+				  filtered_acc_LP[0] = LP_alpha * filtered_acc_LP[0] + (1 - LP_alpha) *  toplam_accX / 10.0;
+				  filtered_acc_LP[1] = LP_alpha * filtered_acc_LP[1] + (1 - LP_alpha) *  toplam_accY / 10.0;
+				  filtered_acc_LP[2] = LP_alpha * filtered_acc_LP[2] + (1 - LP_alpha) *  toplam_accZ / 10.0;
+
+				  gyroX_HP_prev = filtered_gyro_HP_X;
+				  gyroY_HP_prev = filtered_gyro_HP_Y;
+				  gyroZ_HP_prev = filtered_gyro_HP_Z;
+
+
+				  real_roll = atan2f(filtered_acc_LP[1], sqrtf(filtered_acc_LP[0] * filtered_acc_LP[0] + filtered_acc_LP[2] * filtered_acc_LP[2] +  1e-10)) * 180.0f / 3.14;
+				  real_pitch = atan2f(-filtered_acc_LP[0], sqrtf(filtered_acc_LP[1] * filtered_acc_LP[1] + filtered_acc_LP[2] * filtered_acc_LP[2]+ 1e-10)) * 180.0f / 3.14;
+
+				  uint32_t current_time = HAL_GetTick(); // current time
+				  float dt = (current_time - prev_time1) / 1000.0f;
+
+				  real_roll = ALPHA * (real_roll + filtered_gyro_HP_X * dt) + (1 - ALPHA) * real_roll;
+				  real_pitch = ALPHA * (real_pitch + filtered_gyro_HP_Y * dt) + (1 - ALPHA) * real_pitch;
+
+				  prev_time1 = current_time;
+				  gravity_normal_angle = sqrtf(real_roll * real_roll + real_pitch * real_pitch);
+
+				  toplam_roll = 0;
+				  toplam_pitch = 0;
+				  toplam_accX = 0;
+				  toplam_accY = 0;
+				  toplam_accZ = 0;
+				  toplam_gX = 0;
+				  toplam_gY = 0;
+				  toplam_gZ = 0;
+				  sensor_counter = 0;
+		      }
 
 
 		 fitil_kontrol= HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12);
@@ -407,6 +484,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 			switch(MEGU){
 		case RAMPA:
 				MEGU_mod=1;
@@ -414,34 +492,54 @@ int main(void)
 
 				if(-Lsm_Sensor.Accel_X > 10 && altitude_rampa_control ==1 )
 				  {
+					kontrol_counter++;
 
+				  }
+
+				if(kontrol_counter >=10)
+				{
 					rampa_control=1;
 					MEGU=UCUS_BASLADI;
-				  }
+					kontrol_counter =0;
+				}
 
 			  break;
 
 		case UCUS_BASLADI:
 				MEGU_mod=2;
-				if(altitude_kalman>350){
+				if(altitude_kalman>350)
+				{
+					kontrol_counter++;
 
-				MEGU=KADEME_AYRILDIMI;
+				}
+
+				if(kontrol_counter >=10)
+				{
+					MEGU=KADEME_AYRILDIMI;
+					kontrol_counter =0;
 				}
 			 break;
 
 		case KADEME_AYRILDIMI:
 				MEGU_mod=3;
 
-		if(manyetik_switch==1)
-			{
-				MEGU=AYRILDI;
-			}
+				if(manyetik_switch==1)
+				{
+					kontrol_counter++;
+				}
+
+				if(kontrol_counter >=30)
+				{
+
+					MEGU=AYRILDI;
+					kontrol_counter =0;
+				}
 
 			 break;
 
 		case AYRILDI:
 				MEGU_mod=4;
-				if( motor_ates==1 ) // pozisyon kontrolü
+				if( motor_ates==1 && Lsm_Sensor.Accel_X) // pozisyon kontrolü
 				{
 
 					if(set1-set_timer==10)
@@ -458,7 +556,7 @@ int main(void)
 		}
 
 /************************************************************************************/
-		  if(altitude >30 && MEGU <3)
+		  if(altitude >250 && MEGU <3)
 		  {
 			  altitude_rampa_control =1;
 		  }
