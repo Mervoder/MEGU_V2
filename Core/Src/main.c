@@ -125,7 +125,7 @@ float alt=0;
 float P0 = 1013.25;
 float prev_alt=0;
 float speed=0;
-
+int new_data=0;
 float prev_time1;
 uint8_t altitude_rampa_control=0;
 float speed_max , x_max , altitude_max =0;
@@ -146,7 +146,7 @@ float filtered_gyro_HP_X = 0.0f, filtered_gyro_HP_Y = 0.0f, filtered_gyro_HP_Z =
 
 float gyroX_LP_prev = 0.0f, gyroY_LP_prev = 0.0f, gyroZ_LP_prev = 0.0f , filtered_gyro_LP[3];
 
-int kontrol_counter=0;
+int kontrol_counter=0,speed_time, speed_time_prev;
 uint8_t sensor_counter = 0;
 KalmanFilter kf;
 LSM6DSLTR Lsm_Sensor;
@@ -381,7 +381,9 @@ int main(void)
 			          pressure = comp_data.pressure;
 			          altitude = BME280_Get_Altitude() - offset_altitude;
 			          altitude_kalman = KalmanFilter_Update(&kf, altitude);
-			          speed = (altitude - prev_alt) * 3.33;
+			          speed_time = (HAL_GetTick()-speed_time_prev)/1000.0f;
+					  speed = (altitude - prev_alt) * speed_time;
+					  speed_time_prev = speed_time;
 			      }
 
 
@@ -435,20 +437,14 @@ int main(void)
 				  toplam_gY = 0;
 				  toplam_gZ = 0;
 				  sensor_counter = 0;
+				  new_data=1;
 		      }
 
 
 		 fitil_kontrol= HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_12);
-//		 if(fitil_kontrol == 0) { buzzer_long=0; buzzer_short =1;}
-//		 else {
-//			 buzzer_short=0;
-//			 buzzer_long =1;
-//		 }
+
 
 		 manyetik_switch= HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
-
-		// if(manyetik_switch == 1) { buzzer_long=0; buzzer_short =1;}
-
 		 BUTTON_STATE=HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9);
 
 	  }
@@ -487,69 +483,70 @@ int main(void)
 
 			switch(MEGU){
 		case RAMPA:
-				MEGU_mod=1;
-			  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
+						MEGU_mod=1;
+					  //RAMPA MODU ROKET RAMPADA EGÜ SWİTCHLERİ VE ALT KADEME HABERLE�?ME KONTROL ET
 
-				if(-Lsm_Sensor.Accel_X > 10 && altitude_rampa_control ==1 )
-				  {
-					kontrol_counter++;
+						if(-Lsm_Sensor.Accel_X > 10 && altitude_rampa_control ==1 && new_data==1)
+						  {
+							kontrol_counter++;
+							new_data=0;
+						  }
 
-				  }
-
-				if(kontrol_counter >=10)
-				{
-					rampa_control=1;
-					MEGU=UCUS_BASLADI;
-					kontrol_counter =0;
-				}
+						if(kontrol_counter >=10)
+						{
+							rampa_control=1;
+							MEGU=UCUS_BASLADI;
+							kontrol_counter =0;
+						}
 
 			  break;
 
 		case UCUS_BASLADI:
-				MEGU_mod=2;
-				if(altitude_kalman>350)
-				{
-					kontrol_counter++;
+						MEGU_mod=2;
+						if(altitude_kalman>350 && new_data==1)
+						{
+							kontrol_counter++;
+							new_data=0;
+						}
 
-				}
-
-				if(kontrol_counter >=10)
-				{
-					MEGU=KADEME_AYRILDIMI;
-					kontrol_counter =0;
-				}
+						if(kontrol_counter >=10)
+						{
+							MEGU=KADEME_AYRILDIMI;
+							kontrol_counter =0;
+						}
 			 break;
 
 		case KADEME_AYRILDIMI:
-				MEGU_mod=3;
+						MEGU_mod=3;
 
-				if(manyetik_switch==1)
-				{
-					kontrol_counter++;
-				}
+						if(manyetik_switch==1)
+						{
+							kontrol_counter++;
+							new_data=0;
+						}
 
-				if(kontrol_counter >=30)
-				{
+						if(kontrol_counter >=30)
+						{
 
-					MEGU=AYRILDI;
-					kontrol_counter =0;
-				}
+							MEGU=AYRILDI;
+							kontrol_counter =0;
+						}
 
 			 break;
 
 		case AYRILDI:
-				MEGU_mod=4;
-				if( motor_ates==1 && Lsm_Sensor.Accel_X) // pozisyon kontrolü
-				{
+						MEGU_mod=4;
+						if( motor_ates==1 ) // pozisyon kontrolü
+						{
 
-					if(set1-set_timer==10)
-					{
-					HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
-					HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_4);
+							if(set1-set_timer==10)
+							{
+							HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_4);
+							HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_4);
 
-					set1=set_timer;
-					}
-				}
+							set1=set_timer;
+							}
+						}
 
 			 break;
 
